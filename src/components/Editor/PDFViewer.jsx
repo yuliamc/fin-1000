@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Button, Spinner } from 'react-bootstrap';
+import { Button, Spinner, Form } from 'react-bootstrap';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.mjs',
@@ -12,6 +12,7 @@ function PDFViewer({ file }) {
   const containerRef = useRef(null);
   const [pdfDoc, setPdfDoc] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageInput, setPageInput] = useState('1');
   const [totalPages, setTotalPages] = useState(0);
   const [verticalLines, setVerticalLines] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -19,7 +20,6 @@ function PDFViewer({ file }) {
   const renderTaskRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Add mouse event listeners to window for better drag handling
   useEffect(() => {
     if (isDragging) {
       window.addEventListener('mousemove', handleMouseMove);
@@ -57,6 +57,10 @@ function PDFViewer({ file }) {
     }
   }, [verticalLines, currentPage]);
 
+  useEffect(() => {
+    setPageInput(currentPage.toString());
+  }, [currentPage]);
+
   const renderPage = async (pageNum, doc = pdfDoc) => {
     if (!doc) return;
     setIsLoading(true);
@@ -68,9 +72,14 @@ function PDFViewer({ file }) {
 
     const page = await doc.getPage(pageNum);
     const canvas = canvasRef.current;
+    const container = containerRef.current;
     const context = canvas.getContext('2d');
 
-    const viewport = page.getViewport({ scale: 1.5 });
+    const containerWidth = container.clientWidth - 2;
+    const originalViewport = page.getViewport({ scale: 1 });
+    const scale = containerWidth / originalViewport.width;
+    const viewport = page.getViewport({ scale });
+
     canvas.height = viewport.height;
     canvas.width = viewport.width;
 
@@ -97,13 +106,37 @@ function PDFViewer({ file }) {
     if (!canvas) return;
     
     const context = canvas.getContext('2d');
-    verticalLines.forEach((x) => {
+    verticalLines.forEach((x, index) => {
+      // Draw the line
       context.beginPath();
       context.strokeStyle = 'red';
       context.lineWidth = 2;
       context.moveTo(x, 0);
       context.lineTo(x, canvas.height);
       context.stroke();
+
+      // Draw the line number
+      context.save();
+      context.fillStyle = 'white';
+      context.strokeStyle = 'red';
+      context.lineWidth = 1;
+      context.font = '14px Arial';
+      const text = index.toString();
+      const textWidth = context.measureText(text).width;
+      const padding = 4;
+      const boxWidth = textWidth + (padding * 2);
+      const boxHeight = 20;
+      
+      // Draw background box
+      context.fillStyle = 'red';
+      context.fillRect(x - (boxWidth / 2), 0, boxWidth, boxHeight);
+      
+      // Draw text
+      context.fillStyle = 'white';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(text, x, boxHeight / 2);
+      context.restore();
     });
   };
 
@@ -136,7 +169,7 @@ function PDFViewer({ file }) {
     if (lineIndex !== -1) {
       setIsDragging(true);
       setDragLineIndex(lineIndex);
-      e.preventDefault(); // Prevent text selection while dragging
+      e.preventDefault();
     }
   };
 
@@ -174,10 +207,34 @@ function PDFViewer({ file }) {
     }
   };
 
+  const handlePageInputChange = (e) => {
+    const value = e.target.value;
+    if (value === '' || /^\d+$/.test(value)) {
+      setPageInput(value);
+    }
+  };
+
+  const handlePageInputBlur = () => {
+    let newPage = parseInt(pageInput, 10);
+    if (isNaN(newPage) || newPage < 1) {
+      newPage = 1;
+    } else if (newPage > totalPages) {
+      newPage = totalPages;
+    }
+    setPageInput(newPage.toString());
+    setCurrentPage(newPage);
+  };
+
+  const handlePageInputKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      e.target.blur();
+    }
+  };
+
   return (
     <div ref={containerRef} className="pdf-viewer">
       <div className="mb-3 d-flex justify-content-between align-items-center">
-        <div>
+        <div className="d-flex align-items-center">
           <Button 
             variant="primary" 
             onClick={prevPage} 
@@ -186,6 +243,16 @@ function PDFViewer({ file }) {
           >
             Previous
           </Button>
+          <Form.Control
+            type="text"
+            value={pageInput}
+            onChange={handlePageInputChange}
+            onBlur={handlePageInputBlur}
+            onKeyPress={handlePageInputKeyPress}
+            style={{ width: '60px' }}
+            className="text-center mx-2"
+            disabled={isLoading}
+          />
           <Button 
             variant="primary" 
             onClick={nextPage} 
@@ -240,6 +307,8 @@ function PDFViewer({ file }) {
           ref={canvasRef}
           onMouseDown={handleMouseDown}
           style={{ 
+            width: '100%',
+            height: 'auto',
             cursor: isDragging ? 'col-resize' : 'default',
             userSelect: 'none',
             WebkitUserSelect: 'none'
