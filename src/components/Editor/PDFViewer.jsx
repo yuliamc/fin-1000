@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Button } from 'react-bootstrap';
+import { Button, Spinner } from 'react-bootstrap';
 
 // Configure the worker using a relative path
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -18,11 +18,13 @@ function PDFViewer({ file }) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragLineIndex, setDragLineIndex] = useState(null);
   const renderTaskRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!file) return;
 
     const loadPDF = async () => {
+      setIsLoading(true);
       const fileReader = new FileReader();
       fileReader.onload = async function() {
         const typedarray = new Uint8Array(this.result);
@@ -46,6 +48,7 @@ function PDFViewer({ file }) {
 
   const renderPage = async (pageNum, doc = pdfDoc) => {
     if (!doc) return;
+    setIsLoading(true);
 
     // Cancel any ongoing render operation
     if (renderTaskRef.current) {
@@ -70,10 +73,12 @@ function PDFViewer({ file }) {
       renderTaskRef.current = page.render(renderContext);
       await renderTaskRef.current.promise;
       drawVerticalLines();
+      setIsLoading(false);
     } catch (error) {
       if (error.message !== 'Rendering cancelled') {
         console.error('Error rendering PDF:', error);
       }
+      setIsLoading(false);
     }
   };
 
@@ -158,7 +163,7 @@ function PDFViewer({ file }) {
           <Button 
             variant="primary" 
             onClick={prevPage} 
-            disabled={currentPage <= 1}
+            disabled={currentPage <= 1 || isLoading}
             className="me-2"
           >
             Previous
@@ -166,7 +171,7 @@ function PDFViewer({ file }) {
           <Button 
             variant="primary" 
             onClick={nextPage} 
-            disabled={currentPage >= totalPages}
+            disabled={currentPage >= totalPages || isLoading}
           >
             Next
           </Button>
@@ -179,26 +184,48 @@ function PDFViewer({ file }) {
             variant="success" 
             onClick={addVerticalLine}
             className="me-2"
+            disabled={isLoading}
           >
             Add Line
           </Button>
           <Button 
             variant="danger" 
             onClick={removeLastLine}
-            disabled={verticalLines.length === 0}
+            disabled={verticalLines.length === 0 || isLoading}
           >
             Remove Last Line
           </Button>
         </div>
       </div>
-      <canvas
-        ref={canvasRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        style={{ border: '1px solid #ddd' }}
-      />
+      <div style={{ position: 'relative', border: '1px solid #ddd' }}>
+        {isLoading && (
+          <div 
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(255, 255, 255, 0.8)',
+              zIndex: 1
+            }}
+          >
+            <Spinner animation="border" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </Spinner>
+          </div>
+        )}
+        <canvas
+          ref={canvasRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        />
+      </div>
     </div>
   );
 }
