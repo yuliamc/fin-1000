@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Button, Spinner } from 'react-bootstrap';
 
-// Configure the worker using a relative path
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.mjs',
   import.meta.url
@@ -19,6 +18,19 @@ function PDFViewer({ file }) {
   const [dragLineIndex, setDragLineIndex] = useState(null);
   const renderTaskRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Add mouse event listeners to window for better drag handling
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
 
   useEffect(() => {
     if (!file) return;
@@ -39,7 +51,6 @@ function PDFViewer({ file }) {
     loadPDF();
   }, [file]);
 
-  // Re-render when vertical lines change
   useEffect(() => {
     if (pdfDoc) {
       renderPage(currentPage);
@@ -50,7 +61,6 @@ function PDFViewer({ file }) {
     if (!doc) return;
     setIsLoading(true);
 
-    // Cancel any ongoing render operation
     if (renderTaskRef.current) {
       await renderTaskRef.current.cancel();
       renderTaskRef.current = null;
@@ -110,18 +120,23 @@ function PDFViewer({ file }) {
     setVerticalLines(prev => prev.slice(0, -1));
   };
 
-  const handleMouseDown = (e) => {
+  const getMousePosition = (e) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    
+    const scaleX = canvas.width / rect.width;
+    return (e.clientX - rect.left) * scaleX;
+  };
+
+  const handleMouseDown = (e) => {
+    const x = getMousePosition(e);
     const lineIndex = verticalLines.findIndex(lineX => 
-      Math.abs(lineX - x) < 10
+      Math.abs(lineX - x) < 20
     );
 
     if (lineIndex !== -1) {
       setIsDragging(true);
       setDragLineIndex(lineIndex);
+      e.preventDefault(); // Prevent text selection while dragging
     }
   };
 
@@ -130,18 +145,21 @@ function PDFViewer({ file }) {
 
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    const scaleX = canvas.width / rect.width;
+    const x = (e.clientX - rect.left) * scaleX;
 
     setVerticalLines(prev => {
       const newLines = [...prev];
-      newLines[dragLineIndex] = x;
+      newLines[dragLineIndex] = Math.max(0, Math.min(x, canvas.width));
       return newLines;
     });
   };
 
   const handleMouseUp = () => {
-    setIsDragging(false);
-    setDragLineIndex(null);
+    if (isDragging) {
+      setIsDragging(false);
+      setDragLineIndex(null);
+    }
   };
 
   const nextPage = () => {
@@ -221,9 +239,11 @@ function PDFViewer({ file }) {
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
+          style={{ 
+            cursor: isDragging ? 'col-resize' : 'default',
+            userSelect: 'none',
+            WebkitUserSelect: 'none'
+          }}
         />
       </div>
     </div>
